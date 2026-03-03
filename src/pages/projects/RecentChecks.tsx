@@ -1,4 +1,6 @@
+import { Link } from "react-router-dom";
 import type { CheckRun } from "../../shared/types/run";
+import { formatDate } from "../../shared/lib/formatDate";
 
 type RecentChecksProps = {
   runs?: CheckRun[];
@@ -28,9 +30,9 @@ export function RecentChecks({ runs, metricView }: RecentChecksProps) {
             return (
               <tr key={item.id + item.finishedAt}>
                 <td>
-                  <a href={url} style={{ textDecoration: "underline", color: "#1a3a8b" }}>
-                    {item.finishedAt}
-                  </a>
+                  <Link to={url} style={{ textDecoration: "underline", color: "#1a3a8b" }}>
+                    {formatDate(item.finishedAt)}
+                  </Link>
                 </td>
                 <td>
                   <span className={`status status--${item.status?.toLocaleLowerCase()}`}>

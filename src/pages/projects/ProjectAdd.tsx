@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createProject } from "../../shared/api/projects";
+import  {useCreateProjectMutation} from '../../entities/project/api/projectsApi'
 
 function isProbablyUrl(url: string) {
   const v = url.trim().toLowerCase();
@@ -9,7 +9,7 @@ function isProbablyUrl(url: string) {
 
 export function ProjectAdd() {
   const navigate = useNavigate();
-
+  const [createProject] = useCreateProjectMutation();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
 
@@ -50,11 +50,15 @@ export function ProjectAdd() {
               await createProject({
                 name: name.trim(),
                 url: url.trim(),
-              });
+              }).unwrap();
 
               navigate("/projects", { replace: true });
             } catch (err) {
-              setError("Не удалось создать проект. Проверьте данные.");
+              if (err instanceof Error) {
+                setError(err.message);
+              } else {
+                setError("Произошла неизвестная ошибка");
+              }
             } finally {
               setIsSubmitting(false);
             }

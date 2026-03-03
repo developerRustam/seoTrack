@@ -26,3 +26,24 @@ export type CheckRun = {
   scriptChanges: ScriptChange[];
   scripts: ScriptInfo[];
 };
+export type ActiveCheckRun = {
+  runId: string;
+  projectId: string;
+  projectName: string;
+  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAIL";
+  active: boolean;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+} | null;
+
+export type IncidentLevel = "warning" | "critical";
+
+export type IncidentItem = {
+  id: string;
+  projectId: string | null;
+  projectName: string;
+  metric: string;
+  level: IncidentLevel;
+  timeText: string;
+  createdAt: string;
+};

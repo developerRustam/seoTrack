@@ -30,16 +30,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const logout = useCallback(async () => {
-    try {
-      await apiLogout();
-      refresh();
-      navigate("/login", { replace: true });
-      
-    } finally {
-      setUser(null);
-    }
-  }, []);
+  const logout = useCallback(
+    async () => {
+      try {
+        await apiLogout();
+        refresh();
+        navigate("/login", { replace: true });
+      } finally {
+        setUser(null);
+      }
+    },
+    [navigate, refresh]
+  );
 
   useEffect(() => {
     void refresh();

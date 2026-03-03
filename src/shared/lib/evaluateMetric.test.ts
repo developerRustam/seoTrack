@@ -24,7 +24,13 @@ describe("evaluateMetric", () => {
   it("returns critical above the warning threshold", () => {
     keys.forEach((key) => {
       const t = METRIC_THRESHOLDS[key];
-      expect(evaluateMetric(key, t.warning + 1)).toBe("critical");
+      let value;
+      if(key  == "seoScore") {
+        value  =  t.warning - 1;
+      } else {
+        value = t.warning + 1;
+      }
+        expect(evaluateMetric(key, value)).toBe("critical");
     });
   });
 });

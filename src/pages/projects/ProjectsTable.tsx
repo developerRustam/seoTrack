@@ -4,6 +4,7 @@ import styles from './ProjectTable.module.css'
 import { Link } from "react-router-dom";
 import loading from '../../assets/loader.gif';
 import { useGetProjectsQuery } from "../../entities/project/api/projectsApi";
+import { formatDate } from "../../shared/lib/formatDate";
 export function ProjectsTable() {
   const { data, isLoading, error} = useGetProjectsQuery();
   const fetchedProjects = data ?? [];
@@ -26,7 +27,7 @@ export function ProjectsTable() {
         <div className="table-container">
           {errorText && <p className="muted">{errorText}</p>}
         </div>
-      ) : !!fetchedProjects.length ? (
+      ) : fetchedProjects.length ? (
         <table className={styles.table}>
           <thead>
             <tr className={styles.tableHeader}>
@@ -58,15 +59,7 @@ export function ProjectsTable() {
                  <td>{project.alerts}</td>
                  <td>
                    <span className="muted">
-                     {project.lastIncidentAt
-                       ? new Date(project.lastIncidentAt).toLocaleString("ru-RU", {
-                           day: "2-digit",
-                           month: "2-digit",
-                           year: "2-digit",
-                           hour: "2-digit",
-                           minute: "2-digit",
-                         })
-                       : "-"}
+                    {formatDate(project.lastIncidentAt)}
                    </span>
                  </td>
                  {PROJECT_METRICS.map((metric) => (

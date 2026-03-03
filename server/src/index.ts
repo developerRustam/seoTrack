@@ -10,11 +10,30 @@ import { prisma } from "./db/prisma";
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
+app.set("trust proxy", 1);
 
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+const IS_PROD = process.env.NODE_ENV === "production";
+
+const sessionCookieOptions = {
+  httpOnly: true,
+  sameSite: (IS_PROD ? "none" : "lax") as "none" | "lax",
+  secure: IS_PROD,
+  maxAge: 1000 * 60 * 60 * 24 * 7,
+  path: "/",
+};
+
 app.use(
   cors({
-    origin: [CLIENT_ORIGIN],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const normalizedOrigin = origin.replace(/\/$/, "");
+      const isAllowed = CLIENT_ORIGINS.includes(normalizedOrigin);
+      return callback(isAllowed ? null : new Error("Not allowed by CORS"), isAllowed);
+    },
     credentials: true,
   })
 );
@@ -35,11 +54,9 @@ type AuthUser = {
   name: string;
 };
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: AuthUser;
-    }
+declare module "express-serve-static-core" {
+  interface Request {
+    user?: AuthUser;
   }
 }
 
@@ -49,12 +66,7 @@ function isValidEmail(email: string) {
 
 function setSessionCookie(res: express.Response, payload: AuthTokenPayload) {
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: SESSION_TTL });
-  res.cookie(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    maxAge: 1000 * 60 * 60 * 24 * 7,
-  });
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions);
 }
 
 type AuditKey =
@@ -64,10 +76,14 @@ type AuditKey =
   | "server-response-time";
 
 type Strategy = "mobile" | "desktop";
-
-function pickMetric(audits: Record<string, any>, key: AuditKey): number {
+function pickMetric(audits: Record<string, { numericValue?: number }>, key: AuditKey): number {
+  console.log(audits);
   const v = audits?.[key]?.numericValue;
-  return typeof v === "number" ? Math.round(v) : 0;
+  if (typeof v !== "number") return 0;
+  if (key === "cumulative-layout-shift") {
+    return Number(v.toFixed(3));
+  }
+  return Math.trunc(v);
 }
 
 function normalizeMetrics(lhr: any) {
@@ -130,7 +146,6 @@ async function runCheckForProject(project: { id: string; url: string }, runId: s
     const descLhr = desktopJson?.lighthouseResult;
     const mob = normalizeMetrics(mobLhr);
     const desc = normalizeMetrics(descLhr);
-
     const rawJson = {
       mob,
       desc,
@@ -163,10 +178,10 @@ async function runCheckForProject(project: { id: string; url: string }, runId: s
     });
 
     publishSse(project.id, { runId, status: "SUCCESS", finishedAt });
-  } catch (e: any) {
+  } catch (e: unknown) {
     await prisma.checkRun.update({
       where: { id: runId },
-      data: { status: "FAIL", finishedAt: new Date(), error: String(e?.message ?? e) },
+      data: { status: "FAIL", finishedAt: new Date(), error: String((e as Error)?.message ?? e) },
     });
     publishSse(project.id, { runId, status: "FAIL" });
   }
@@ -210,6 +225,29 @@ async function requireAuth(
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+app.patch("/projects/:id/settings", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { name, url, checkFrequency } = req.body as {
+    name?: string;
+    url?: string;
+    checkFrequency?: "HOURLY" | "EVERY_6_HOURS" | "EVERY_12_HOURS" | "DAILY" | "WEEKLY" | "MONTHLY";
+  };
+  
+  if (!id || !name || !url || !checkFrequency) {
+    return res.status(400).json({ error: "name, url, checkFrequency are required" });
+  }
+
+  const project = await prisma.project.findFirst({ where: { id, userId: req.user!.id } });
+  if (!project) return res.status(404).json({ error: "Project not found" });
+
+  const updated = await prisma.project.update({
+    where: { id },
+    data: { name, url, checkFrequency },
+  });
+
+  return res.json(updated);
+});
 
 app.post("/auth/register", async (req, res) => {
   const { email, password, name } = req.body as {
@@ -275,7 +313,7 @@ app.post("/auth/login", async (req, res) => {
 });
 
 app.post("/auth/logout", (_req, res) => {
-  res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: "lax", secure: false });
+  res.clearCookie(SESSION_COOKIE, sessionCookieOptions);
   res.json({ ok: true });
 });
 
@@ -415,11 +453,11 @@ app.get("/projects/:projectId/check-runs", requireAuth, async (req, res) => {
     }));
 
     res.json(normalized);
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("CHECK RUNS ERROR:", e);
     return res.status(500).json({
       error: "Failed to load check runs",
-      details: e?.message ?? String(e),
+      details: (e as Error)?.message ?? String(e),
     });
   }
 });

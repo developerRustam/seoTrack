@@ -6,7 +6,14 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-
+enum CheckFrequency {
+  HOURLY
+  EVERY_6_HOURS  @map("6H")
+  EVERY_12_HOURS @map("12H")
+  DAILY
+  WEEKLY
+  MONTHLY
+}
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -24,7 +31,8 @@ model Project {
   name      String
   url       String
   createdAt DateTime @default(now())
-
+  checkFrequency CheckFrequency @default(DAILY)
+  additionalPages Json?         @default("[]") // [{ title, url, enabled }]
   description   String?
   alerts        Int      @default(0)
   lastIncidentAt DateTime?

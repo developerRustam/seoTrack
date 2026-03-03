@@ -11,7 +11,7 @@ export const METRIC_THRESHOLDS: Record<ProjectMetricKey, Threshold> = {
     cls: { good: 0.1, warning: 0.25 },
     inp: { good: 200, warning: 500 },
     ttfb: { good: 800, warning: 1800 },
-    seoScore: { good: 100, warning: 75 },
+    seoScore: { good: 90, warning: 75 },
   };
 
 

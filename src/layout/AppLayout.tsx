@@ -4,12 +4,11 @@ import { Sidebar } from "./sidebar/Sidebar";
 import styles from "./AppLayout.module.css";
 import "./AppLayout.css";
 import { AuthProvider } from "../shared/auth/AuthContext";
-import { StoreProvider } from "../app/providers/StoreProvider";
 import { CheckRunPopup } from "../shared/ui/checkRunPopup/CheckRunPopup";
-import { fetchActiveCheckRun, type ActiveCheckRun } from "../shared/api/projects";
+import {useFetchActiveCheckRunQuery}  from '../entities/project/api/projectsApi'
 
 export function AppLayout() {
-  const [activeRun, setActiveRun] = useState<ActiveCheckRun>(null);
+  const {data: activeRun} = useFetchActiveCheckRunQuery(undefined, { pollingInterval: 5000 });
   const lastShownRunId = useRef<string | null>(
     localStorage.getItem("checkRunLastShownId")
   );
@@ -28,28 +27,12 @@ export function AppLayout() {
     title: "Проверка проекта",
   });
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const data = await fetchActiveCheckRun();
-        if (active) setActiveRun(data);
-      } catch {
-        if (active) setActiveRun(null);
-      }
-    };
-
-    void load();
-    const timer = setInterval(load, 5000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, []);
 
   useEffect(() => {
     if (!activeRun) {
-      setPopup((prev) => ({ ...prev, open: false }));
+      Promise.resolve().then(() =>
+        setPopup((prev) => ({ ...prev, open: false }))
+      );
       return;
     }
 
@@ -60,16 +43,20 @@ export function AppLayout() {
 
     if (activeRun.active) {
       if (dismissedRunId.current === activeRun.runId) {
-        setPopup((prev) => ({ ...prev, open: false }));
+        Promise.resolve().then(() =>
+        setPopup((prev) => ({ ...prev, open: false }))
+      )
         return;
       }
+      Promise.resolve().then(() =>
       setPopup({
         open: true,
         status: "running",
         title: "Проверка проекта",
         subtitle: activeRun.projectName ? `Проект: ${activeRun.projectName}` : undefined,
         message: "Проверка выполняется…",
-      });
+      })
+    )
       return;
     }
 
@@ -81,24 +68,22 @@ export function AppLayout() {
         localStorage.removeItem("checkRunDismissedId");
       }
       const isSuccess = activeRun.status === "SUCCESS";
+      Promise.resolve().then(() =>
       setPopup({
         open: true,
         status: isSuccess ? "success" : "fail",
         title: "Проверка завершена",
         subtitle: activeRun.projectName ? `Проект: ${activeRun.projectName}` : undefined,
         message: isSuccess ? "Готово. Данные обновлены." : "Ошибка при проверке.",
-      });
-      const timer = setTimeout(() => {
-        setPopup((prev) => ({ ...prev, open: false }));
-      }, 3000);
-      return () => clearTimeout(timer);
+      })
+    )
+
     }
   }, [activeRun]);
 
   return (
-    <StoreProvider>
-      <AuthProvider>
-        <div className={styles.app}>
+    <AuthProvider>
+      <div className={styles.app}>
           <CheckRunPopup
             open={popup.open}
             status={popup.status}
@@ -132,8 +117,7 @@ export function AppLayout() {
               <span>Status: MVP</span>
             </div>
           </footer>
-        </div>
-      </AuthProvider>
-    </StoreProvider>
+      </div>
+    </AuthProvider>
   );
 }
