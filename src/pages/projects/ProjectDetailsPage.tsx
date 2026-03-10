@@ -1,22 +1,31 @@
-﻿import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { ProjectChart } from "./ProjectChart";
-import type { CheckRun } from "../../shared/types/run";
+import type { CheckRun, CheckRunPageSnapshot } from "../../shared/types/run";
 import { RecentChecks } from "./RecentChecks";
-import loading from '../../assets/loader.gif';
-import { useGetProjectQuery, useGetCheckRunsQuery, useStartCheckRunMutation } from "../../entities/project/api/projectsApi";
-import type { MetricView} from "../../shared/types/metrics";
-import { ProjectMetricsPanel } from "../../widjet/ui/ProjectMetricsPanel";
-import { ProjectIssuesList } from "../../widjet/ui/ProjectIssuesList";
-import { ProjectScriptsList } from "../../widjet/ui/ProjectScriptsList";
+import loading from "../../assets/loader.gif";
+import {
+  useGetProjectQuery,
+  useGetCheckRunsQuery,
+  useStartCheckRunMutation,
+  useGetAdditionalPagesQuery,
+} from "../../entities/project/api/projectsApi";
+import type { MetricView, Metrics } from "../../shared/types/metrics";
+import { ProjectMetricsPanel } from "../../widgets/ui/ProjectMetricsPanel";
+import { ProjectIssuesList } from "../../widgets/ui/ProjectIssuesList";
+import { ProjectScriptsList } from "../../widgets/ui/ProjectScriptsList";
 import { formatDate } from "../../shared/lib/formatDate";
-import settingIcon from '../../assets/settings.png'
+import settingIcon from "../../assets/settings.png";
 import { ProjectSettingsPopup } from "../../shared/ui/projectSettingsPopup/ProjectSettingsPopup";
-import { ProjectAdditionalPages } from "../../widjet/ui/ProjectAdditionalPages";
+import { ProjectAdditionalPages } from "../../widgets/ui/ProjectAdditionalPages";
+import type { AdditionalPage } from "../../shared/types/project";
+
 export function ProjectDetailsPage() {
   const { id, historyId } = useParams();
-  const [isOpenSetting, setIsOpenSetting] = useState(false)
-  const [startCheckRun, {error: startCheckRunError}] = useStartCheckRunMutation();
+  const [isOpenSetting, setIsOpenSetting] = useState(false);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const { data: additionalPages } = useGetAdditionalPagesQuery(id as string, { skip: !id });
+  const [startCheckRun, { error: startCheckRunError }] = useStartCheckRunMutation();
   const {
     data: projectData,
     error: projectError,
@@ -25,12 +34,14 @@ export function ProjectDetailsPage() {
 
   const {
     data: checkRunsData,
-    error: checkRunsError
+    error: checkRunsError,
   } = useGetCheckRunsQuery(id as string, { skip: !id });
 
   const project = projectData;
   const checkRuns = checkRunsData;
-  
+  const resolvedAdditionalPages = useMemo(() => {
+    return additionalPages ?? project?.additionalPages ?? [];
+  }, [additionalPages, project?.additionalPages]);
   const [metricView, setMetricView] = useState<MetricView>("desc");
 
   const currentCheckRun: CheckRun | undefined = useMemo(() => {
@@ -47,90 +58,123 @@ export function ProjectDetailsPage() {
     }, checkRuns[0]);
   }, [checkRuns, historyId]);
 
-
   const [isStarting, setIsStarting] = useState(false);
   const isPending =
     currentCheckRun?.status === "RUNNING" || currentCheckRun?.status === "QUEUED";
-    
 
+  const activePage: AdditionalPage | null = useMemo(() => {
+    if (!selectedPageId) return null;
+    return resolvedAdditionalPages.find((page) => page.id === selectedPageId) ?? null;
+  }, [resolvedAdditionalPages, selectedPageId]);
 
+  const activeCheckRun: CheckRun | undefined = useMemo(() => {
+    if (!currentCheckRun) return undefined;
+    if (!selectedPageId) return currentCheckRun;
 
-  const chartRuns = useMemo(() => { 
-      if(Array.isArray(checkRuns)) {
-        return checkRuns.filter((run: CheckRun) => run?.metrics?.[metricView])
+    const pageSnapshot = currentCheckRun.additionalPages?.find(
+      (page: CheckRunPageSnapshot) => page.id === selectedPageId
+    );
+    if (!pageSnapshot) return undefined;
+
+    return {
+      ...currentCheckRun,
+      metrics: pageSnapshot.metrics,
+      scripts: pageSnapshot.scripts,
+    };
+  }, [currentCheckRun, selectedPageId]);
+
+  const chartRuns = useMemo(() => {
+    if (!Array.isArray(checkRuns)) {
+      return [];
+    }
+
+    if (!selectedPageId) {
+      return checkRuns.filter((run: CheckRun) => run?.metrics?.[metricView]);
+    }
+
+    return checkRuns.flatMap((run: CheckRun) => {
+      const pageSnapshot = run.additionalPages?.find((page) => page.id === selectedPageId);
+
+      if (!pageSnapshot?.metrics?.[metricView]) {
+        return [];
       }
-      return []
-    },[checkRuns, metricView])
 
+      return [
+        {
+          ...run,
+          metrics: pageSnapshot.metrics,
+          scripts: pageSnapshot.scripts,
+        },
+      ];
+    });
+  }, [checkRuns, metricView, selectedPageId]);
 
-  if(isProjectLoading) {
+  const activeTitle = activePage?.title ?? project?.name ?? "";
+  const activeSubtitle = activePage?.url ?? project?.description ?? "";
+  const activeStatus = activePage?.status ?? project?.status;
+
+  if (isProjectLoading) {
     return (
       <div className="table-container">
-      <img src={loading} alt="Загрузка" />
-      <p className="muted">Загрузка проектов...</p>
-    </div>
-    )
+        <img src={loading} alt="Загрузка" />
+        <p className="muted">Загрузка проектов...</p>
+      </div>
+    );
   }
+
   if (!project) {
     return (
       <div className="page">
         <div className="panel panel-mainText">
           <div className="page__header">
-            
-          {checkRunsError || projectError ? (
-            <h1 className="page__title">
-              {"Что-то пошло не так"}
-            </h1>
-          ) : (
-            <h1 className="page__title">Такого проекта не существует</h1>
-          )}
+            {checkRunsError || projectError ? (
+              <h1 className="page__title">{"Что-то пошло не так"}</h1>
+            ) : (
+              <h1 className="page__title">Такого проекта не существует</h1>
+            )}
           </div>
-          <p className="page__subtitle">Если  проблема на нашей стороне сообщите  пожалуйста  об   этом в техническую поддержку</p>
+          <p className="page__subtitle">
+            Если проблема на нашей стороне сообщите пожалуйста об этом в техническую поддержку
+          </p>
           <Link to="/projects" className="button button--primary">
-            Вернуться  к другим проектам
+            Вернуться к другим проектам
           </Link>
         </div>
       </div>
     );
-  } 
+  }
+
+  const displayedMetrics: Metrics = activeCheckRun?.metrics ?? activePage?.metrics ?? project.metrics;
+
   return (
     <>
-      <ProjectSettingsPopup open={isOpenSetting} initialValues={project} onClose={() => setIsOpenSetting(false)} />
+      {isOpenSetting && (
+        <ProjectSettingsPopup
+          initialValues={project}
+          onClose={() => setIsOpenSetting(false)}
+        />
+      )}
       <div className="page">
-
         {checkRuns && (
           <div className="panel panel-mainText">
             <div className="page__header">
               <div>
-                <div style={{display:"flex"}}>
-                  <h1 className="page__title">{project.name}</h1>
+                <div className="panel-mainText-flex">
+                  <h1 className="page__title">{activeTitle}</h1>
                   <button
                     type="button"
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      marginLeft: "10px",
-                      verticalAlign: "middle",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      height: "17px"
-                    }}
+                    className="panel-mainText__btn"
                     aria-label="Открыть настройки проекта"
                     onClick={() => setIsOpenSetting(true)}
                   >
                     <img
                       src={settingIcon}
                       alt="Настройки проекта"
-                      style={{
-                        width: "17px",
-                        height: "17px"
-                      }}
+                      className="panel-mainText__img"
                     />
                   </button>
                 </div>
-                <p className="page__subtitle">{project.description}</p>
+                <p className="page__subtitle">{activeSubtitle}</p>
               </div>
               <button
                 className="button button--primary"
@@ -140,7 +184,7 @@ export function ProjectDetailsPage() {
                   if (!id) return;
                   setIsStarting(true);
                   try {
-                    await  startCheckRun(id).unwrap();
+                    await startCheckRun(id).unwrap();
                   } finally {
                     setIsStarting(false);
                   }
@@ -149,20 +193,19 @@ export function ProjectDetailsPage() {
                 {isStarting
                   ? "Запускаем..."
                   : isPending
-                  ? "Ожидайте"
-                  :  startCheckRunError ?
-                  "Произошла  ошибка"
-                  : "Запустить проверку"}
+                    ? "Ожидайте"
+                    : startCheckRunError
+                      ? "Произошла ошибка"
+                      : "Запустить проверку"}
               </button>
             </div>
 
             <div className="project-details__meta">
               <span className="pill">Owner: {project.user?.email ?? "-"}</span>
+              <span className="pill">Scope: {selectedPageId ? "Additional page" : "Main page"}</span>
+              <span className="pill">Status: {activeStatus ?? "-"}</span>
               <span className="pill">Open alerts: {project.alerts ?? 0}</span>
-              <span className="pill">
-                Last incident:
-                {formatDate(project.lastIncidentAt)}
-              </span>
+              <span className="pill">Last incident: {formatDate(project.lastIncidentAt)}</span>
             </div>
             <div className="switch-type-data">
               <button
@@ -182,13 +225,15 @@ export function ProjectDetailsPage() {
                 Мобайл
               </button>
             </div>
-            <ProjectMetricsPanel
-              metricView={metricView}
-              project={project}
-            />
+            <ProjectMetricsPanel metricView={metricView} metrics={displayedMetrics} />
           </div>
         )}
-        <ProjectAdditionalPages/>
+        <ProjectAdditionalPages
+          projectId={project.id}
+          additionalPages={resolvedAdditionalPages}
+          selectedPageId={selectedPageId}
+          onSelectPage={setSelectedPageId}
+        />
         {checkRuns && historyId === undefined ? (
           chartRuns.length > 1 ? (
             <ProjectChart checkRuns={chartRuns} metricView={metricView} />
@@ -196,16 +241,13 @@ export function ProjectDetailsPage() {
             <div className="panel panel--empty panel--first-run">
               <div className="panel__content">
                 {checkRuns.length === 0 ? (
-                  <h2 className="panel__title">
-                    Сделай свой первый запуск для {project.name}
-                  </h2>
+                  <h2 className="panel__title">Сделай свой первый запуск для {activeTitle}</h2>
                 ) : (
-                  <h2 className="panel__title">
-                    Слишком мало данных для {project.name}
-                  </h2>
+                  <h2 className="panel__title">Слишком мало данных для {activeTitle}</h2>
                 )}
                 <p className="panel__subtitle">
-                  Для отображения графика истории метрик нужно хотя бы два запуска проверки. Запустите проверку проекта, чтобы начать сбор статистики!
+                  Для отображения графика истории метрик нужно хотя бы два запуска проверки.
+                  Запустите проверку проекта, чтобы начать сбор статистики!
                 </p>
                 <button
                   className="button"
@@ -221,19 +263,15 @@ export function ProjectDetailsPage() {
                     }
                   }}
                 >
-                  {isStarting
-                    ? "Запускаем..."
-                    : isPending
-                    ? "Ожидайте..."
-                    : "Запустить проверку"}
+                  {isStarting ? "Запускаем..." : isPending ? "Ожидайте..." : "Запустить проверку"}
                 </button>
               </div>
             </div>
           )
         ) : null}
       </div>
-      <ProjectScriptsList currentCheckRun={currentCheckRun}/>
-      <ProjectIssuesList currentCheckRun={currentCheckRun}  metricView={metricView}/>
+      <ProjectScriptsList currentCheckRun={activeCheckRun} />
+      <ProjectIssuesList currentCheckRun={activeCheckRun} metricView={metricView} />
       <RecentChecks runs={chartRuns} metricView={metricView} />
     </>
   );

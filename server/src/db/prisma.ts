@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; prismaPool?: Pool };
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; prismaPool?: InstanceType<typeof Pool> };
 
 const pool =
   globalForPrisma.prismaPool ??

@@ -16,6 +16,16 @@ export type ScriptInfo = {
   url: string;
 };
 
+export type CheckRunPageSnapshot = {
+  id: string;
+  title: string;
+  url: string;
+  enabled: boolean;
+  status: "ok" | "warning" | "error";
+  metrics: Metrics;
+  scripts: ScriptInfo[];
+};
+
 export type CheckRun = {
   id: string;
   projectId: string;
@@ -25,6 +35,7 @@ export type CheckRun = {
   metrics: Metrics;
   scriptChanges: ScriptChange[];
   scripts: ScriptInfo[];
+  additionalPages?: CheckRunPageSnapshot[];
 };
 export type ActiveCheckRun = {
   runId: string;

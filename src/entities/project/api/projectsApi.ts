@@ -1,5 +1,5 @@
 import { baseApi } from "../../../shared/api/baseApi";
-import type { Project } from "../../../shared/types/project";
+import type { Project, CheckFrequencyEnum, AdditionalPage } from "../../../shared/types/project";
 import type {ActiveCheckRun, CheckRun } from "../../../shared/types/run";
 import type {IncidentItem } from "../../../shared/types/run";
 
@@ -29,6 +29,23 @@ export const projectsApi = baseApi.injectEndpoints({
             ]
           : [{ type: "CheckRuns", id: "LIST" }],
     }),
+   
+    getAdditionalPages: build.query<AdditionalPage[],  string>({
+      query: (id) =>  `/projects/${id}/additional-pages`,
+      providesTags: (_result, _error, id) => [{ type: "Projects", id }],
+    }),
+    addAdditionalPage: build.mutation<AdditionalPage[], { projectId: string; page: AdditionalPage }>({
+    query: ({ projectId, page }) => ({
+      url: `/projects/${projectId}/additional-pages`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page }),
+    }),
+    invalidatesTags: (_result, _error, arg) => [
+      { type: "Projects", id: arg.projectId },
+      "Projects",
+    ],
+  }),
     startCheckRun: build.mutation<{ ok: boolean; runId: string }, string>({
       query: (projectId) => ({
         url: `/projects/${projectId}/check-runs`,
@@ -36,7 +53,7 @@ export const projectsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["CheckRuns", "Projects"],
     }),
-    updateProjectSettings: build.mutation<Project, { projectId: string, name: string,  url: string, checkFrequency: "HOURLY"| "6H" | "12H" | "DAILY" | "WEEKLY" | "MONTHLY"}>({
+    updateProjectSettings: build.mutation<Project, { projectId: string, name: string,  url: string, checkFrequency: CheckFrequencyEnum}>({
         query: ({ projectId, ...body }) => ({
           url: `/projects/${projectId}/settings`,
           method: "PATCH",
@@ -69,7 +86,9 @@ export const {
   useGetProjectsQuery,
   useGetProjectQuery,
   useGetCheckRunsQuery,
+  useGetAdditionalPagesQuery,
   useUpdateProjectSettingsMutation,
+  useAddAdditionalPageMutation,
   useStartCheckRunMutation,
   useCreateProjectMutation,
   useFetchIncidentsQuery,

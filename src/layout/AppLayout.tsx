@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./sidebar/Sidebar";
 import styles from "./AppLayout.module.css";
 import "./AppLayout.css";
-import { AuthProvider } from "../shared/auth/AuthContext";
+import { AuthProvider } from "../shared/auth/AuthProvider";
 import { CheckRunPopup } from "../shared/ui/checkRunPopup/CheckRunPopup";
 import {useFetchActiveCheckRunQuery}  from '../entities/project/api/projectsApi'
 

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { login, AuthError, type AuthErrorCode } from "../../shared/storage/authStore";
 import closeEye from '../../assets/closeEye.png'
 import openEye from '../../assets/openEye.png'
-import { useAuth } from "../../shared/auth/AuthContext";
+import { useAuth } from "../../shared/auth/useAuth";
 
 const ERROR_TEXT: Record<AuthErrorCode, string> = {
   EMAIL_TAKEN: "Этот email уже зарегистрирован",
@@ -93,9 +93,9 @@ export function LoginPage() {
               placeholder="********"
               required
               autoComplete="current-password"
-              onClick={() => setTypeEye((prev)=> prev === 'open' ? 'close' : 'open')}
             />
-             <img className="form__field-eye" src={typeEye=== 'open' ? openEye : closeEye} alt="" />
+             <img className="form__field-eye" src={typeEye=== 'open' ? openEye : closeEye} alt="" 
+              onClick={() => setTypeEye((prev)=> prev === 'open' ? 'close' : 'open')}/>
              </div>
           </label>
 

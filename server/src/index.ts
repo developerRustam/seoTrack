@@ -5,7 +5,7 @@ import cookieParser from "cookie-parser";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cron from "node-cron";
-import { prisma } from "./db/prisma";
+import { prisma } from "./db/prisma.js";
 
 const app = express();
 app.use(express.json());
@@ -54,6 +54,38 @@ type AuthUser = {
   name: string;
 };
 
+type PageMetrics = {
+  lcp: number;
+  cls: number;
+  inp: number;
+  ttfb: number;
+  seoScore: number;
+};
+
+type PageMetricSnapshot = {
+  mob: PageMetrics;
+  desc: PageMetrics;
+};
+
+type PageScript = {
+  domain: string;
+  impactDescription: string;
+  impactMs: number;
+  sizeKb: number;
+  type: "third-party" | "internal";
+  url: string;
+};
+
+type StoredAdditionalPage = {
+  id: string;
+  title: string;
+  url: string;
+  enabled: boolean;
+  status: "ok" | "warning" | "error";
+  metrics: PageMetricSnapshot;
+  scripts: PageScript[];
+};
+
 declare module "express-serve-static-core" {
   interface Request {
     user?: AuthUser;
@@ -62,6 +94,131 @@ declare module "express-serve-static-core" {
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function getSingleParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function emptyPageMetrics(): PageMetrics {
+  return {
+    lcp: 0,
+    cls: 0,
+    inp: 0,
+    ttfb: 0,
+    seoScore: 0,
+  };
+}
+
+
+function normalizeMetricsSnapshot(value: unknown): PageMetricSnapshot {
+  const source = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const parseMetrics = (key: "mob" | "desc") => {
+    const metrics = typeof source[key] === "object" && source[key] !== null
+      ? (source[key] as Record<string, unknown>)
+      : {};
+    const defaults = emptyPageMetrics();
+
+    return {
+      lcp: typeof metrics.lcp === "number" ? metrics.lcp : defaults.lcp,
+      cls: typeof metrics.cls === "number" ? metrics.cls : defaults.cls,
+      inp: typeof metrics.inp === "number" ? metrics.inp : defaults.inp,
+      ttfb: typeof metrics.ttfb === "number" ? metrics.ttfb : defaults.ttfb,
+      seoScore: typeof metrics.seoScore === "number" ? metrics.seoScore : defaults.seoScore,
+    };
+  };
+
+  return {
+    mob: parseMetrics("mob"),
+    desc: parseMetrics("desc"),
+  };
+}
+
+function normalizeScripts(value: unknown): PageScript[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const script = item as Record<string, unknown>;
+
+      return {
+        domain: typeof script.domain === "string" ? script.domain : "",
+        impactDescription: typeof script.impactDescription === "string" ? script.impactDescription : "",
+        impactMs: typeof script.impactMs === "number" ? script.impactMs : 0,
+        sizeKb: typeof script.sizeKb === "number" ? script.sizeKb : 0,
+        type: script.type === "internal" ? "internal" : "third-party",
+        url: typeof script.url === "string" ? script.url : "",
+      } satisfies PageScript;
+    })
+    .filter((item): item is PageScript => item !== null);
+}
+
+function getPageStatus(metrics: PageMetricSnapshot): "ok" | "warning" | "error" {
+  const totalAlerts = countAlerts(metrics.mob) + countAlerts(metrics.desc);
+
+  if (totalAlerts === 0) return "ok";
+  if (totalAlerts < 4) return "warning";
+  return "error";
+}
+
+function normalizeAdditionalPage(value: unknown): StoredAdditionalPage | null {
+  if (!value || typeof value !== "object") return null;
+  const page = value as Record<string, unknown>;
+
+  if (typeof page.id !== "string" || typeof page.title !== "string" || typeof page.url !== "string") {
+    return null;
+  }
+
+  const metrics = normalizeMetricsSnapshot(page.metrics);
+
+  return {
+    id: page.id,
+    title: page.title,
+    url: page.url,
+    enabled: typeof page.enabled === "boolean" ? page.enabled : true,
+    status:
+      page.status === "warning" || page.status === "error" || page.status === "ok"
+        ? page.status
+        : getPageStatus(metrics),
+    metrics,
+    scripts: normalizeScripts(page.scripts),
+  };
+}
+
+function normalizeAdditionalPages(value: unknown): StoredAdditionalPage[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => normalizeAdditionalPage(item))
+    .filter((item): item is StoredAdditionalPage => item !== null);
+}
+
+function serializeProject(project: {
+  id: string;
+  name: string;
+  url: string;
+  description: string | null;
+  alerts: number;
+  lastIncidentAt: Date | null;
+  metrics: unknown;
+  additionalPages: unknown;
+  checkFrequency: string;
+  user?: unknown;
+  userId?: string;
+  createdAt?: Date;
+}) {
+  const metrics = normalizeMetricsSnapshot(project.metrics);
+
+  return {
+    ...project,
+    description: project.description ?? "",
+    lastIncidentAt: project.lastIncidentAt?.toISOString() ?? "",
+    metrics,
+    additionalPages: normalizeAdditionalPages(project.additionalPages),
+    scripts: [],
+    status: getPageStatus(metrics),
+  };
 }
 
 function setSessionCookie(res: express.Response, payload: AuthTokenPayload) {
@@ -76,6 +233,20 @@ type AuditKey =
   | "server-response-time";
 
 type Strategy = "mobile" | "desktop";
+
+interface LighthouseAudits {
+  [key: string]: { numericValue?: number };
+}
+
+interface LighthouseResult {
+  audits?: LighthouseAudits;
+  categories?: {
+    performance?: {
+      score?: number;
+    };
+  };
+}
+
 function pickMetric(audits: Record<string, { numericValue?: number }>, key: AuditKey): number {
   console.log(audits);
   const v = audits?.[key]?.numericValue;
@@ -86,10 +257,12 @@ function pickMetric(audits: Record<string, { numericValue?: number }>, key: Audi
   return Math.trunc(v);
 }
 
-function normalizeMetrics(lhr: any) {
-  const audits = lhr?.audits ?? {};
-  const scoreRaw = lhr?.categories?.performance?.score;
-  const performanceScore = typeof scoreRaw === "number" ? Math.round(Number((scoreRaw * 100).toFixed(2))) : 0;
+function normalizeMetrics(lhr: unknown) {
+  const result = (lhr || {}) as Partial<LighthouseResult>;
+  const audits = result.audits ?? {};
+  const scoreRaw = result.categories?.performance?.score;
+  const performanceScore =
+    typeof scoreRaw === "number" ? Math.round(Number((scoreRaw * 100).toFixed(2))) : 0;
 
   return {
     lcp: pickMetric(audits, "largest-contentful-paint"),
@@ -124,6 +297,26 @@ async function runPageSpeed(url: string, strategy: Strategy) {
   return res.json();
 }
 
+
+
+async function runChecksForPage(url: string) {
+  const [mobileJson, desktopJson] = await Promise.all([
+    runPageSpeed(url, "mobile"),
+    runPageSpeed(url, "desktop"),
+  ]);
+
+  const mobLhr = (mobileJson as { lighthouseResult?: unknown })?.lighthouseResult;
+  const descLhr = (desktopJson as { lighthouseResult?: unknown })?.lighthouseResult;
+
+  return {
+    metrics: {
+      mob: normalizeMetrics(mobLhr),
+      desc: normalizeMetrics(descLhr),
+    },
+    scripts: [],
+  };
+}
+
 const sseClients = new Map<string, Set<express.Response>>();
 
 function publishSse(projectId: string, payload: unknown) {
@@ -135,29 +328,48 @@ function publishSse(projectId: string, payload: unknown) {
   }
 }
 
-async function runCheckForProject(project: { id: string; url: string }, runId: string) {
+async function runCheckForProject(project: { id: string; url: string; additionalPages?: unknown }, runId: string) {
   try {
-    const [mobileJson, desktopJson] = await Promise.all([
-      runPageSpeed(project.url, "mobile"),
-      runPageSpeed(project.url, "desktop"),
-    ]);
+    const storedAdditionalPages = normalizeAdditionalPages(project.additionalPages);
+    const enabledAdditionalPages = storedAdditionalPages.filter((page) => page.enabled);
+    const mainPageResult = await runChecksForPage(project.url);
+    const checkedAdditionalPages = await Promise.all(
+      enabledAdditionalPages.map(async (page) => {
+        const result = await runChecksForPage(page.url);
 
-    const mobLhr = mobileJson?.lighthouseResult;
-    const descLhr = desktopJson?.lighthouseResult;
-    const mob = normalizeMetrics(mobLhr);
-    const desc = normalizeMetrics(descLhr);
+        return {
+          ...page,
+          metrics: result.metrics,
+          scripts: result.scripts,
+          status: getPageStatus(result.metrics),
+        };
+      })
+    );
+
+    const additionalPagesById = new Map(checkedAdditionalPages.map((page) => [page.id, page]));
+    const nextAdditionalPages = storedAdditionalPages.map((page) => additionalPagesById.get(page.id) ?? page);
     const rawJson = {
-      mob,
-      desc,
-      rawJson: {
-        mobile: mob,
-        desktop: desc,
-      },
+      mob: mainPageResult.metrics.mob,
+      desc: mainPageResult.metrics.desc,
+      additionalPages: checkedAdditionalPages,
     };
     await prisma.metricSnapshot.create({
       data: {
         checkRunId: runId,
         rawJson,
+      },
+    });
+
+    await prisma.scriptSnapshot.create({
+      data: {
+        checkRunId: runId,
+        scripts: {
+          mainPage: mainPageResult.scripts,
+          additionalPages: checkedAdditionalPages.map((page) => ({
+            id: page.id,
+            scripts: page.scripts,
+          })),
+        },
       },
     });
 
@@ -167,13 +379,21 @@ async function runCheckForProject(project: { id: string; url: string }, runId: s
       data: { status: "SUCCESS", finishedAt },
     });
 
-    const totalAlerts = countAlerts(mob) + countAlerts(desc);
+    const totalAlerts =
+      countAlerts(mainPageResult.metrics.mob) +
+      countAlerts(mainPageResult.metrics.desc) +
+      checkedAdditionalPages.reduce(
+        (sum, page) => sum + countAlerts(page.metrics.mob) + countAlerts(page.metrics.desc),
+        0
+      );
+
     await prisma.project.update({
       where: { id: project.id },
       data: {
-        metrics: { mob, desc },
+        metrics: mainPageResult.metrics,
         alerts: totalAlerts,
         lastIncidentAt: totalAlerts > 0 ? finishedAt : null,
+        additionalPages: nextAdditionalPages,
       },
     });
 
@@ -187,7 +407,7 @@ async function runCheckForProject(project: { id: string; url: string }, runId: s
   }
 }
 
-async function enqueueCheckRun(project: { id: string; url: string }) {
+async function enqueueCheckRun(project: { id: string; url: string; additionalPages?: unknown }) {
   const run = await prisma.checkRun.create({
     data: {
       projectId: project.id,
@@ -223,11 +443,49 @@ async function requireAuth(
   req.user = user;
   next();
 }
+app.post("/projects/:id/additional-pages", requireAuth, async (req, res) => {
+  const id = getSingleParam(req.params.id);
+  const { page } = req.body as { page?: unknown };
+
+  if (!id || !page) {
+    return res.status(400).json({ error: "Project id and page are required" });
+  }
+
+  try {
+    const project = await prisma.project.findFirst({
+      where: { id, userId: req.user!.id },
+      select: { additionalPages: true },
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const currentPages = normalizeAdditionalPages(project.additionalPages);
+    const nextPage = normalizeAdditionalPage(page);
+
+    if (!nextPage) {
+      return res.status(400).json({ error: "Invalid additional page payload" });
+    }
+
+    currentPages.push(nextPage);
+
+    await prisma.project.update({
+      where: { id },
+      data: { additionalPages: currentPages },
+    });
+
+    return res.json(currentPages);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Internal error" });
+  }
+});
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.patch("/projects/:id/settings", requireAuth, async (req, res) => {
-  const { id } = req.params;
+  const id = getSingleParam(req.params.id);
   const { name, url, checkFrequency } = req.body as {
     name?: string;
     url?: string;
@@ -246,8 +504,33 @@ app.patch("/projects/:id/settings", requireAuth, async (req, res) => {
     data: { name, url, checkFrequency },
   });
 
-  return res.json(updated);
+  return res.json(serializeProject(updated));
 });
+
+app.get("/projects/:id/additional-pages", requireAuth, async (req, res) => {
+  const id = getSingleParam(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ error: "Project id required" });
+  }
+
+  try {
+    const project = await prisma.project.findFirst({
+      where: { id, userId: req.user!.id },
+      select: { additionalPages: true },
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    return res.json(normalizeAdditionalPages(project.additionalPages));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Internal error" });
+  }
+});
+
 
 app.post("/auth/register", async (req, res) => {
   const { email, password, name } = req.body as {
@@ -338,7 +621,7 @@ app.post("/projects", requireAuth, async (req, res) => {
       data: { userId: req.user!.id, name, url },
     });
 
-    return res.status(201).json(project);
+    return res.status(201).json(serializeProject(project));
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Internal error" });
@@ -352,7 +635,7 @@ app.get("/projects", requireAuth, async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    return res.json(projects);
+    return res.json(projects.map((project) => serializeProject(project)));
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Internal error" });
@@ -360,7 +643,7 @@ app.get("/projects", requireAuth, async (req, res) => {
 });
 
 app.post("/projects/:id/check-runs", requireAuth, async (req, res) => {
-  const { id } = req.params;
+  const id = getSingleParam(req.params.id);
   if (!id) return res.status(400).json({ error: "project id is required" });
 
   try {
@@ -369,7 +652,11 @@ app.post("/projects/:id/check-runs", requireAuth, async (req, res) => {
     });
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    const run = await enqueueCheckRun({ id: project.id, url: project.url });
+    const run = await enqueueCheckRun({
+      id: project.id,
+      url: project.url,
+      additionalPages: project.additionalPages,
+    });
     res.status(202).json({ ok: true, runId: run.id });
   } catch (e) {
     console.error(e);
@@ -378,12 +665,12 @@ app.post("/projects/:id/check-runs", requireAuth, async (req, res) => {
 });
 
 app.get("/projects/:id", requireAuth, async (req, res) => {
-  const { id } = req.params;
+  const id = getSingleParam(req.params.id);
   if (!id) return res.status(400).json({ error: "project id is required" });
 
   try {
     const project = await prisma.project.findFirst({
-      where: { id: id, userId: req.user!.id },
+      where: { id, userId: req.user!.id },
       include: {
         user: true,
       },
@@ -393,7 +680,7 @@ app.get("/projects/:id", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    return res.json(project);
+    return res.json(serializeProject(project));
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Internal error" });
@@ -401,7 +688,7 @@ app.get("/projects/:id", requireAuth, async (req, res) => {
 });
 
 app.get("/projects/:id/check-runs/stream", requireAuth, async (req, res) => {
-  const { id } = req.params;
+  const id = getSingleParam(req.params.id);
   if (!id) return res.status(400).end();
 
   const project = await prisma.project.findFirst({
@@ -426,9 +713,10 @@ app.get("/projects/:id/check-runs/stream", requireAuth, async (req, res) => {
 });
 
 app.get("/projects/:projectId/check-runs", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
+  const projectId = getSingleParam(req.params.projectId);
 
   try {
+    if (!projectId) return res.status(400).json({ error: "Project id is required" });
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: req.user!.id },
       select: { id: true },
@@ -438,19 +726,43 @@ app.get("/projects/:projectId/check-runs", requireAuth, async (req, res) => {
     const runs = await prisma.checkRun.findMany({
       where: { projectId },
       orderBy: { createdAt: "desc" },
-      include: { metrics: true, scripts: true },
+      include: { metrics: true, scripts: true, project: false },
     });
-    const normalized = runs.map((r) => ({
-      id: r.id,
-      projectId: r.projectId,
-      status: r.status,
-      createdAt: r.createdAt,
-      startedAt: r.startedAt,
-      finishedAt: r.finishedAt,
-      error: r.error,
-      metrics: r.metrics?.rawJson ?? null,
-      scripts: r.scripts?.scripts ?? [],
-    }));
+    const normalized = runs.map((r) => {
+      const metricsSource = r.metrics?.rawJson as Record<string, unknown> | null;
+      const scriptsSource = r.scripts?.scripts as Record<string, unknown> | PageScript[] | null;
+      const additionalPageMetrics = normalizeAdditionalPages(metricsSource?.additionalPages);
+      const additionalPageScripts = typeof scriptsSource === "object" && scriptsSource !== null && !Array.isArray(scriptsSource)
+        ? (scriptsSource.additionalPages as Array<{ id?: string; scripts?: unknown }> | undefined) ?? []
+        : [];
+      const additionalPages = additionalPageMetrics.map((page) => {
+        const scripts = additionalPageScripts.find((item) => item.id === page.id)?.scripts;
+
+        return {
+          ...page,
+          scripts: normalizeScripts(scripts ?? page.scripts),
+        };
+      });
+      const mainScripts =
+        Array.isArray(scriptsSource)
+          ? normalizeScripts(scriptsSource)
+          : normalizeScripts(
+              typeof scriptsSource === "object" && scriptsSource !== null ? scriptsSource.mainPage : []
+            );
+
+      return {
+        id: r.id,
+        projectId: r.projectId,
+        status: r.status,
+        createdAt: r.createdAt,
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt,
+        error: r.error,
+        metrics: normalizeMetricsSnapshot(metricsSource),
+        scripts: mainScripts,
+        additionalPages,
+      };
+    });
 
     res.json(normalized);
   } catch (e: unknown) {
@@ -542,7 +854,6 @@ cron.schedule("0 * * * *", async () => {
     const projects = await prisma.project.findMany({
       select: { id: true, url: true },
     });
-    console.log(projects)
     for (const project of projects) {
       const active = await prisma.checkRun.findFirst({
         where: {
@@ -552,7 +863,12 @@ cron.schedule("0 * * * *", async () => {
         select: { id: true },
       });
       if (active) continue;
-      await enqueueCheckRun(project);
+      const fullProject = await prisma.project.findFirst({
+        where: { id: project.id },
+        select: { id: true, url: true, additionalPages: true },
+      });
+      if (!fullProject) continue;
+      await enqueueCheckRun(fullProject);
     }
   } catch (e) {
     console.error("CRON CHECK RUN ERROR:", e);

@@ -1,46 +1,39 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "client"
 }
 
 datasource db {
   provider = "postgresql"
 }
-enum CheckFrequency {
-  HOURLY
-  EVERY_6_HOURS  @map("6H")
-  EVERY_12_HOURS @map("12H")
-  DAILY
-  WEEKLY
-  MONTHLY
-}
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  passwordHash String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  projects  Project[]
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  createdAt    DateTime  @default(now())
+  name         String
+  passwordHash String
+  updatedAt    DateTime  @updatedAt
+  projects     Project[]
 }
 
 model Project {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  url       String
-  createdAt DateTime @default(now())
-  checkFrequency CheckFrequency @default(DAILY)
-  additionalPages Json?         @default("[]") // [{ title, url, enabled }]
-  description   String?
-  alerts        Int      @default(0)
-  lastIncidentAt DateTime?
-  metrics       Json     @default("{}")
-  incidents Incident[]
-  user      User     @relation(fields: [userId], references: [id])
-  checkRuns CheckRun[]
+  id              String         @id @default(cuid())
+  userId          String
+  name            String
+  url             String
+  createdAt       DateTime       @default(now())
+  description     String?
+  alerts          Int            @default(0)
+  lastIncidentAt  DateTime?
+  metrics         Json           @default("{}")
+  checkFrequency  CheckFrequency @default(DAILY)
+  additionalPages Json?          @default("[]")
+  checkRuns       CheckRun[]
+  incidents       Incident[]
+  user            User           @relation(fields: [userId], references: [id])
 }
+
 model Incident {
   id          String   @id
   projectId   String?
@@ -49,49 +42,50 @@ model Incident {
   level       String
   timeText    String
   createdAt   DateTime @default(now())
-
   project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([createdAt])
 }
 
-
 model CheckRun {
-  id         String      @id @default(cuid())
+  id         String          @id @default(cuid())
   projectId  String
-  status     CheckStatus @default(QUEUED)
-  createdAt  DateTime    @default(now())
+  status     CheckStatus     @default(QUEUED)
+  createdAt  DateTime        @default(now())
   startedAt  DateTime?
   finishedAt DateTime?
   error      String?
-
   project    Project         @relation(fields: [projectId], references: [id])
   metrics    MetricSnapshot?
   scripts    ScriptSnapshot?
 }
 
 model MetricSnapshot {
-  id        String  @id @default(cuid())
-  checkRunId String @unique
-
+  id               String   @id @default(cuid())
+  checkRunId       String   @unique
   performanceScore Float?
   lcp              Float?
   cls              Float?
   inp              Float?
-
-  rawJson Json?
-
-  checkRun CheckRun @relation(fields: [checkRunId], references: [id])
+  rawJson          Json?
+  checkRun         CheckRun @relation(fields: [checkRunId], references: [id])
 }
 
 model ScriptSnapshot {
-  id        String  @id @default(cuid())
-  checkRunId String @unique
+  id         String   @id @default(cuid())
+  checkRunId String   @unique
+  scripts    Json
+  checkRun   CheckRun @relation(fields: [checkRunId], references: [id])
+}
 
-  scripts Json
-
-  checkRun CheckRun @relation(fields: [checkRunId], references: [id])
+enum CheckFrequency {
+  HOURLY
+  EVERY_6_HOURS  @map("6H")
+  EVERY_12_HOURS @map("12H")
+  DAILY
+  WEEKLY
+  MONTHLY
 }
 
 enum CheckStatus {

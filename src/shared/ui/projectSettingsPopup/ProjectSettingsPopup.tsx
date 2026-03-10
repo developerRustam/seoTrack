@@ -1,30 +1,28 @@
-import { useEffect, useState } from "react";
-import type { ProjectMetricConfig } from "../../lib/projectMetrics";
+import { useState } from "react";
+import type {CheckFrequencyEnum} from '../../types/project'
 import styles from "./ProjectSettingsPopup.module.css";
 import { useUpdateProjectSettingsMutation } from "../../../entities/project/api/projectsApi";
 type Values = {
   id: string;
   name: string;
   url: string;
-  checkFrequency?: "HOURLY"| "6H" | "12H" | "DAILY" | "WEEKLY" | "MONTHLY";
+  checkFrequency?: CheckFrequencyEnum;
 };
 type ProjectSettingsPopupProps = {
-  open: boolean;
   onClose?: () => void;
   onSubmit?: () => void;
-  initialValues?:Values;
+  initialValues:Values;
 };
 
 
-export function ProjectSettingsPopup({ open, onClose, onSubmit, initialValues }: ProjectSettingsPopupProps) {
-  if (!open) return null;
+export function ProjectSettingsPopup({ onClose, onSubmit, initialValues }: ProjectSettingsPopupProps) {
+
   const [draft, setDraft] = useState<Values>(initialValues);
   const [updateSettings, { isLoading }] = useUpdateProjectSettingsMutation();
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!draft?.id) return;
-    console.log('dsfasdfsdafsad');
     try {
       await updateSettings({
         projectId: draft.id,
@@ -38,13 +36,10 @@ export function ProjectSettingsPopup({ open, onClose, onSubmit, initialValues }:
       console.error(error);
     }
   };
-  useEffect(() => {
-    if (open) setDraft(initialValues);
-  }, [open, initialValues]);
 
   return (
     <div className={styles.projectSettingsPopup}>
-      <div className={styles.projectSettingsPopup__overlay} onClick={handleSave} />
+      <div className={styles.projectSettingsPopup__overlay} onClick={onClose} />
       <div className={styles.projectSettingsPopup__window} role="dialog" aria-modal="true">
         <button
           className={styles.projectSettingsPopup__close}
@@ -94,7 +89,10 @@ export function ProjectSettingsPopup({ open, onClose, onSubmit, initialValues }:
               name="checkFrequency"
               value={draft.checkFrequency}
               onChange={(e) =>
-                setDraft((p) => ({ ...p, checkFrequency: e.target.value }))
+                setDraft((p) => ({
+                  ...p,
+                  checkFrequency: e.currentTarget.value as CheckFrequencyEnum,
+                }))
               }
             >
               <option value="HOURLY">Every hour</option>
@@ -116,7 +114,7 @@ export function ProjectSettingsPopup({ open, onClose, onSubmit, initialValues }:
               Cancel
             </button>
             <button className={styles.button} type="submit">
-              Save
+              {isLoading ? 'Saving...' : 'Save'}
             </button>
           </div>
         </form>

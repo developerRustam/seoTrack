@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { register, AuthError, type AuthErrorCode } from "../../shared/storage/authStore";
-import { useAuth } from "../../shared/auth/AuthContext";
+import { useAuth } from "../../shared/auth/useAuth";
 import closeEye from '../../assets/closeEye.png'
 import openEye from '../../assets/openEye.png'
 

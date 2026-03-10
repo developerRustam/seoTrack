@@ -1,7 +1,6 @@
 import { PROJECT_METRICS } from "../../shared/lib/projectMetrics";
-import type { MetricView, ProjectMetricKey } from "../../shared/types/metrics";
-import type { Project } from "../../shared/types/project";
-export function ProjectMetricsPanel ({ metricView, project }: { metricView: MetricView, project: Project }) {
+import type { MetricView, Metrics, ProjectMetricKey } from "../../shared/types/metrics";
+export function ProjectMetricsPanel ({ metricView, metrics }: { metricView: MetricView, metrics: Metrics }) {
     
     const metricPercents: Record<ProjectMetricKey, { good: number; betterToBeLower: boolean }> = {
         lcp: { good: 2500, betterToBeLower: true },
@@ -13,14 +12,13 @@ export function ProjectMetricsPanel ({ metricView, project }: { metricView: Metr
       
       const radius = 42.5;
       const circumference = 2 * Math.PI * radius;
-      const safeProjectMetrics: Partial<Record<ProjectMetricKey, number>> = project?.metrics?.[metricView] ?? {};
+      const safeProjectMetrics: Partial<Record<ProjectMetricKey, number>> = metrics?.[metricView] ?? {};
       
 
     return(
         <div className="project-details__flex">
               {PROJECT_METRICS.map((metric) => {
                 const value = safeProjectMetrics[metric.key];
-                console.log(safeProjectMetrics);
                 const config =
                   metricPercents[metric.key] || {
                     good: 1,

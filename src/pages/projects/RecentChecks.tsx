@@ -30,7 +30,7 @@ export function RecentChecks({ runs, metricView }: RecentChecksProps) {
             return (
               <tr key={item.id + item.finishedAt}>
                 <td>
-                  <Link to={url} style={{ textDecoration: "underline", color: "#1a3a8b" }}>
+                  <Link to={url} className='recent-checks-table-link'>
                     {formatDate(item.finishedAt)}
                   </Link>
                 </td>

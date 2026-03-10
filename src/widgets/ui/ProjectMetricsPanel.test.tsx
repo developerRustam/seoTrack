@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { Project } from "../../shared/types/project";
 import { ProjectMetricsPanel } from "./ProjectMetricsPanel";
+import { describe, expect, it } from "vitest";
 
 const mockProject: Project = {
   id: "p1",
@@ -8,6 +9,8 @@ const mockProject: Project = {
   status: "ok",
   description: "Main store page",
   alerts: 0,
+  url: "https://example.com",
+  additionalPages: [],
   lastIncidentAt: "",
   user: {
     id: "u1",
@@ -36,14 +39,14 @@ const mockProject: Project = {
 
 describe("ProjectMetricsPanel", () => {
   it("renders desktop metric values for desc view", () => {
-    render(<ProjectMetricsPanel metricView="desc" project={mockProject} />);
+    render(<ProjectMetricsPanel metricView="desc" metrics={mockProject.metrics} />);
 
     expect(screen.getByText("1200")).toBeInTheDocument();
     expect(screen.getByText("96")).toBeInTheDocument();
   });
 
   it("renders mobile metric values for mob view", () => {
-    render(<ProjectMetricsPanel metricView="mob" project={mockProject} />);
+    render(<ProjectMetricsPanel metricView="mob" metrics={mockProject.metrics} />);
 
     expect(screen.getByText("2600")).toBeInTheDocument();
     expect(screen.getByText("84")).toBeInTheDocument();
