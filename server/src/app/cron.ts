@@ -1,32 +1,41 @@
 import { prisma } from "../db/prisma.js";
+import { shouldRunProjectCheck } from "../lib/checkFrequency.js";
 import { enqueueCheckRun } from "../services/checkRunService.js";
 
 import cron from "node-cron";
 
-export function startCronJobs () {
-    cron.schedule("0 * * * *", async () => {
+export function startCronJobs() {
+  cron.schedule("0 * * * *", async () => {
     try {
+      const now = new Date();
+
       const projects = await prisma.project.findMany({
-        select: { id: true, url: true },
+        select: { id: true, url: true, checkFrequency: true, additionalPages: true },
       });
+
       for (const project of projects) {
-        const active = await prisma.checkRun.findFirst({
-          where: {
-            projectId: project.id,
-            status: { in: ["QUEUED", "RUNNING"] },
+
+        const lastRun = await prisma.checkRun.findFirst({
+          where: { projectId: project.id },
+          orderBy: { createdAt: "desc" },
+          select: {
+            status: true,
+            createdAt: true,
+            finishedAt: true,
           },
-          select: { id: true },
         });
-        if (active) continue;
-        const fullProject = await prisma.project.findFirst({
-          where: { id: project.id },
-          select: { id: true, url: true, additionalPages: true },
-        });
-        if (!fullProject) continue;
-        await enqueueCheckRun(fullProject);
+        if (lastRun?.status === "QUEUED" || lastRun?.status === "RUNNING") {
+          continue;
+        }
+        const lastRunAt = lastRun?.finishedAt ?? lastRun?.createdAt ?? null;
+        const shouldRun = shouldRunProjectCheck(project.checkFrequency, lastRunAt, now);
+
+        if (!shouldRun) continue;
+
+        await enqueueCheckRun(project);
       }
     } catch (e) {
       console.error("CRON CHECK RUN ERROR:", e);
     }
-  })
+  });
 }
