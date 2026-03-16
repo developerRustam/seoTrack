@@ -19,21 +19,25 @@ export function ProjectSettingsPopup({ onClose, onSubmit, initialValues }: Proje
 
   const [draft, setDraft] = useState<Values>(initialValues);
   const [updateSettings, { isLoading }] = useUpdateProjectSettingsMutation();
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!draft?.id) return;
+    setError(null);
     try {
       await updateSettings({
         projectId: draft.id,
-        name: draft.name,
-        url: draft.url,
+        name: draft.name.trim(),
+        url: draft.url.trim(),
         checkFrequency: draft.checkFrequency ?? "DAILY",
       }).unwrap();
       
-      if (onSubmit) onSubmit();
+      onSubmit?.();
+      onClose?.();
     } catch (error) {
       console.error(error);
+      setError("Failed to save project settings");
     }
   };
 
@@ -109,11 +113,13 @@ export function ProjectSettingsPopup({ onClose, onSubmit, initialValues }: Proje
             <span>Enable notifications</span>
           </label>
 
+          {error && <div role="alert">{error}</div>}
+
           <div className={styles.projectSettingsPopup__actions}>
             <button className={`${styles.button} ${styles.buttonSecondary}`} type="button" onClick={onClose}>
               Cancel
             </button>
-            <button className={styles.button} type="submit">
+            <button className={styles.button} type="submit" disabled={isLoading}>
               {isLoading ? 'Saving...' : 'Save'}
             </button>
           </div>
