@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type {CheckFrequencyEnum} from '../../types/project'
+import {CHECK_FREQUENCIES, type CheckFrequencyEnum} from '../../types/project'
 import styles from "./ProjectSettingsPopup.module.css";
 import { useUpdateProjectSettingsMutation } from "../../../entities/project/api/projectsApi";
 type Values = {
@@ -92,13 +92,15 @@ export function ProjectSettingsPopup({ onClose, onSubmit, initialValues }: Proje
               className={styles.projectSettingsPopup__input}
               name="checkFrequency"
               value={draft.checkFrequency}
-              onChange={(e) =>
+              onChange={(e) => {
+                const value = e.currentTarget.value as CheckFrequencyEnum;
                 setDraft((p) => ({
                   ...p,
-                  checkFrequency: e.currentTarget.value as CheckFrequencyEnum,
-                }))
-              }
-            >
+                  checkFrequency: value,
+                }));
+              }}
+            > 
+              <option value="DISABLED">Disabled</option>
               <option value="HOURLY">Every hour</option>
               <option value="EVERY_6_HOURS">Every 6 hours</option>
               <option value="EVERY_12_HOURS">Every 12 hours</option>

@@ -1,117 +1,30 @@
 import { Link, useParams } from "react-router-dom";
-import { useMemo, useState } from "react";
-import { ProjectChart } from "./ProjectChart";
-import type { CheckRun, CheckRunPageSnapshot } from "../../shared/types/run";
-import { RecentChecks } from "./RecentChecks";
-import loading from "../../assets/loader.gif";
-import {
-  useGetProjectQuery,
-  useGetCheckRunsQuery,
-  useStartCheckRunMutation,
-  useGetAdditionalPagesQuery,
-} from "../../entities/project/api/projectsApi";
-import type { MetricView, Metrics } from "../../shared/types/metrics";
-import { ProjectMetricsPanel } from "../../widgets/ui/ProjectMetricsPanel";
-import { ProjectIssuesList } from "../../widgets/ui/ProjectIssuesList";
-import { ProjectScriptsList } from "../../widgets/ui/ProjectScriptsList";
-import { formatDate } from "../../shared/lib/formatDate";
-import settingIcon from "../../assets/settings.png";
-import { ProjectSettingsPopup } from "../../shared/ui/projectSettingsPopup/ProjectSettingsPopup";
-import { ProjectAdditionalPages } from "../../widgets/ui/ProjectAdditionalPages";
-import type { AdditionalPage } from "../../shared/types/project";
+import { ProjectChart } from "../../ProjectChart";
+import { RecentChecks } from "../../RecentChecks";
+import loading from "../../../../assets/loader.gif";
+import { ProjectMetricsPanel } from "../../../../widgets/ui/ProjectMetricsPanel";
+import { ProjectIssuesList } from "../../../../widgets/ui/ProjectIssuesList";
+import { ProjectScriptsList } from "../../../../widgets/ui/ProjectScriptsList";
+import { formatDate } from "../../../../shared/lib/formatDate";
+import settingIcon from "../../../../assets/settings.png";
+import { ProjectSettingsPopup } from "../../../../shared/ui/projectSettingsPopup/ProjectSettingsPopup";
+import { ProjectAdditionalPages } from "../../../../widgets/ui/ProjectAdditionalPages";
+import { useProjectDetailsPage } from "../model/useProjectDetailsPage";
 
 export function ProjectDetailsPage() {
   const { id, historyId } = useParams();
-  const [isOpenSetting, setIsOpenSetting] = useState(false);
-  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
-  const { data: additionalPages } = useGetAdditionalPagesQuery(id as string, { skip: !id });
-  const [startCheckRun, { error: startCheckRunError }] = useStartCheckRunMutation();
   const {
-    data: projectData,
-    error: projectError,
-    isLoading: isProjectLoading,
-  } = useGetProjectQuery(id as string, { skip: !id });
+    project, projectError, isProjectLoading, checkRuns,
+    checkRunsError, metricView, setMetricView,
+    selectedPageId, setSelectedPageId, isOpenSetting, setIsOpenSetting,
+    isStarting, startCheckRunError, startCheck, resolvedAdditionalPages,
+    isPending, activeCheckRun, displayedMetrics, activeSubtitle, activeTitle,
+    activeStatus, chartRuns
+  } = useProjectDetailsPage({ projectId: id, historyId });
 
-  const {
-    data: checkRunsData,
-    error: checkRunsError,
-  } = useGetCheckRunsQuery(id as string, { skip: !id });
 
-  const project = projectData;
-  const checkRuns = checkRunsData;
-  const resolvedAdditionalPages = useMemo(() => {
-    return additionalPages ?? project?.additionalPages ?? [];
-  }, [additionalPages, project?.additionalPages]);
-  const [metricView, setMetricView] = useState<MetricView>("desc");
 
-  const currentCheckRun: CheckRun | undefined = useMemo(() => {
-    if (!checkRuns || checkRuns.length === 0) return undefined;
-    if (historyId) {
-      return checkRuns.find((run: CheckRun) => run.id === historyId);
-    }
-    return checkRuns.reduce((latest, current) => {
-      const getTimestamp = (run: CheckRun) => {
-        const ts = Date.parse(run.createdAt);
-        return isNaN(ts) ? 0 : ts;
-      };
-      return getTimestamp(current) > getTimestamp(latest) ? current : latest;
-    }, checkRuns[0]);
-  }, [checkRuns, historyId]);
 
-  const [isStarting, setIsStarting] = useState(false);
-  const isPending =
-    currentCheckRun?.status === "RUNNING" || currentCheckRun?.status === "QUEUED";
-
-  const activePage: AdditionalPage | null = useMemo(() => {
-    if (!selectedPageId) return null;
-    return resolvedAdditionalPages.find((page) => page.id === selectedPageId) ?? null;
-  }, [resolvedAdditionalPages, selectedPageId]);
-
-  const activeCheckRun: CheckRun | undefined = useMemo(() => {
-    if (!currentCheckRun) return undefined;
-    if (!selectedPageId) return currentCheckRun;
-
-    const pageSnapshot = currentCheckRun.additionalPages?.find(
-      (page: CheckRunPageSnapshot) => page.id === selectedPageId
-    );
-    if (!pageSnapshot) return undefined;
-
-    return {
-      ...currentCheckRun,
-      metrics: pageSnapshot.metrics,
-      scripts: pageSnapshot.scripts,
-    };
-  }, [currentCheckRun, selectedPageId]);
-
-  const chartRuns = useMemo(() => {
-    if (!Array.isArray(checkRuns)) {
-      return [];
-    }
-
-    if (!selectedPageId) {
-      return checkRuns.filter((run: CheckRun) => run?.metrics?.[metricView]);
-    }
-
-    return checkRuns.flatMap((run: CheckRun) => {
-      const pageSnapshot = run.additionalPages?.find((page) => page.id === selectedPageId);
-
-      if (!pageSnapshot?.metrics?.[metricView]) {
-        return [];
-      }
-
-      return [
-        {
-          ...run,
-          metrics: pageSnapshot.metrics,
-          scripts: pageSnapshot.scripts,
-        },
-      ];
-    });
-  }, [checkRuns, metricView, selectedPageId]);
-
-  const activeTitle = activePage?.title ?? project?.name ?? "";
-  const activeSubtitle = activePage?.url ?? project?.description ?? "";
-  const activeStatus = activePage?.status ?? project?.status;
 
   if (isProjectLoading) {
     return (
@@ -144,7 +57,6 @@ export function ProjectDetailsPage() {
     );
   }
 
-  const displayedMetrics: Metrics = activeCheckRun?.metrics ?? activePage?.metrics ?? project.metrics;
 
   return (
     <>
@@ -180,15 +92,7 @@ export function ProjectDetailsPage() {
                 className="button button--primary"
                 type="button"
                 disabled={isStarting || isPending}
-                onClick={async () => {
-                  if (!id) return;
-                  setIsStarting(true);
-                  try {
-                    await startCheckRun(id).unwrap();
-                  } finally {
-                    setIsStarting(false);
-                  }
-                }}
+                onClick={startCheck}
               >
                 {isStarting
                   ? "Запускаем..."
@@ -253,15 +157,7 @@ export function ProjectDetailsPage() {
                   className="button"
                   type="button"
                   disabled={isStarting || isPending}
-                  onClick={async () => {
-                    if (!id) return;
-                    setIsStarting(true);
-                    try {
-                      await startCheckRun(id).unwrap();
-                    } finally {
-                      setIsStarting(false);
-                    }
-                  }}
+                  onClick={startCheck}
                 >
                   {isStarting ? "Запускаем..." : isPending ? "Ожидайте..." : "Запустить проверку"}
                 </button>
