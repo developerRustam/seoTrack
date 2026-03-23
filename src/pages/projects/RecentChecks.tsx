@@ -9,7 +9,6 @@ type RecentChecksProps = {
 
 export function RecentChecks({ runs, metricView }: RecentChecksProps) {
   const checks = runs ?? [];
-
   return (
     <div>
       <table className="recent-checks-table">
@@ -50,3 +49,4 @@ export function RecentChecks({ runs, metricView }: RecentChecksProps) {
     </div>
   );
 }
+

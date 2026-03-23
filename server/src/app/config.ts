@@ -38,4 +38,6 @@ export const SESSION_COOKIE = "pm_session";
 export const JWT_SECRET = getJwtSecret();
 export const SESSION_TTL = "7d";
 export const PAGESPEED_API_KEY = process.env.PAGESPEED_API_KEY?.trim() ?? "";
+export const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS ?? 45000);
+export const CHECK_RUN_STALE_MS = Number(process.env.CHECK_RUN_STALE_MS ?? 10 * 60 * 1000);
 export const PORT = Number(process.env.PORT ?? 4000);

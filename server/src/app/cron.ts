@@ -1,12 +1,13 @@
+import cron from "node-cron";
+
 import { prisma } from "../db/prisma.js";
 import { shouldRunProjectCheck } from "../lib/checkFrequency.js";
-import { enqueueCheckRun } from "../services/checkRunService.js";
-
-import cron from "node-cron";
+import { enqueueCheckRun, failStaleCheckRuns } from "../services/checkRunService.js";
 
 export function startCronJobs() {
   cron.schedule("0 * * * *", async () => {
     try {
+      await failStaleCheckRuns();
       const now = new Date();
 
       const projects = await prisma.project.findMany({
@@ -14,7 +15,6 @@ export function startCronJobs() {
       });
 
       for (const project of projects) {
-
         const lastRun = await prisma.checkRun.findFirst({
           where: { projectId: project.id },
           orderBy: { createdAt: "desc" },
