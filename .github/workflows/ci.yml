@@ -65,3 +65,11 @@ jobs:
         run: npm run typecheck
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/seotrack
+
+      - name: Test backend
+        run: npm run test:run
+
+      - name: Build backend
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/seotrack
