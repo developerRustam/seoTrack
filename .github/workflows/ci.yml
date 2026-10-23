@@ -29,11 +29,14 @@ jobs:
       - name: Lint frontend
         run: npm run lint
 
+      - name: Test frontend
+        run: npm run test:ci
+
       - name: Build frontend
         run: npm run build
 
-      - name: Test frontend
-        run: npm run test:ci
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
 
   backend:
     name: Backend Checks
@@ -59,12 +62,12 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/seotrack
+          DATABASE_URL: postgresql://postgres:***@localhost:5432/seotrack
 
       - name: Typecheck backend
         run: npm run typecheck
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/seotrack
+          DATABASE_URL: postgresql://postgres:***@localhost:5432/seotrack
 
       - name: Test backend
         run: npm run test:run
@@ -72,4 +75,7 @@ jobs:
       - name: Build backend
         run: npm run build
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/seotrack
+          DATABASE_URL: postgresql://postgres:***@localhost:5432/seotrack
+
+      - name: Audit backend dependencies
+        run: npm audit --audit-level=high
